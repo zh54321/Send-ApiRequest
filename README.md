@@ -27,7 +27,7 @@ Note:
 | Parameter | Description |
 | ------------------------------ | ------------------------------------------------------------------------------------------- |
 | `-Method` *(Mandatory)* | HTTP method to use (`GET`, `POST`, `PATCH`, `PUT`, `DELETE`) |
-| `-Uri` *(Mandatory)* | Absolute or relative request URI |
+| `-Uri` *(Mandatory)* | Absolute request URI |
 | `-AccessToken` | OAuth bearer token. If specified, the module adds `Authorization: Bearer <token>` |
 | `-Body` | Request body as string, hashtable, or object. Non-string values are converted to JSON |
 | `-MaxRetries` *(Default: 6)* | Maximum retry attempts for transient API failures |

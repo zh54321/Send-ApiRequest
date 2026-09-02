@@ -34,11 +34,25 @@ function Add-ApiQueryParameters {
     }
 
     $queryString = ($pairs -join '&')
-    if ($Uri -match '\?') {
-        return "$Uri&$queryString"
+    $fragmentIndex = $Uri.IndexOf('#')
+
+    if ($fragmentIndex -ge 0) {
+        $baseUri = $Uri.Substring(0, $fragmentIndex)
+        $fragment = $Uri.Substring($fragmentIndex)
+    }
+    else {
+        $baseUri = $Uri
+        $fragment = ''
     }
 
-    return "$Uri`?$queryString"
+    if ($baseUri -match '\?') {
+        $separator = if ($baseUri.EndsWith('?') -or $baseUri.EndsWith('&')) { '' } else { '&' }
+    }
+    else {
+        $separator = '?'
+    }
+
+    return "$baseUri$separator$queryString$fragment"
 }
 
 function Get-ApiErrorDetails {
@@ -185,7 +199,7 @@ function Send-ApiRequest {
         HTTP method to use: GET, POST, PATCH, PUT, DELETE.
 
     .PARAMETER Uri
-        Absolute or relative request URI.
+        Absolute request URI.
 
     .PARAMETER AccessToken
         Optional bearer token. If provided, Authorization header is set to "Bearer <token>".
@@ -399,11 +413,28 @@ function Send-ApiRequest {
             return
         }
 
-        if ($response.PSObject.Properties.Name -contains 'value') {
+        $valueProperty = $response.PSObject.Properties |
+            Where-Object { $_.Name -ceq 'value' } |
+            Select-Object -First 1
+
+        $isODataCollection = $false
+        if ($valueProperty -and -not ($response -is [System.Xml.XmlNode])) {
+            $value = $valueProperty.Value
+            $isODataCollection = (
+                $null -eq $value -or (
+                    $value -is [System.Collections.IEnumerable] -and
+                    -not ($value -is [string]) -and
+                    -not ($value -is [System.Collections.IDictionary]) -and
+                    -not ($value -is [System.Xml.XmlNode])
+                )
+            )
+        }
+
+        if ($isODataCollection) {
             $sawValueResponse = $true
 
-            if ($null -ne $response.value) {
-                foreach ($item in @($response.value)) {
+            if ($null -ne $value) {
+                foreach ($item in @($value)) {
                     $results.Add($item)
                 }
             }
@@ -446,7 +477,16 @@ function Send-ApiRequest {
     }
 
     if ($RawJson) {
-        return $output | ConvertTo-Json -Depth $JsonDepthResponse
+        if ($results.Count -eq 0) {
+            return '[]'
+        }
+
+        if ($sawValueResponse) {
+            return ConvertTo-Json -InputObject $output -Depth $JsonDepthResponse
+        }
+
+        $jsonOutput = $output | ConvertTo-Json -Depth $JsonDepthResponse
+        return $jsonOutput
     }
 
     return $output
