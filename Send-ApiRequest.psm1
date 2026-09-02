@@ -72,7 +72,9 @@ function Get-ApiErrorDetails {
         }
 
         try {
-            if ($response -is [System.Net.Http.HttpResponseMessage]) {
+            # Compare by type name: [System.Net.Http.HttpResponseMessage] is not a
+            # resolvable type literal on Windows PowerShell 5.1 and would throw here.
+            if ($response.GetType().FullName -eq 'System.Net.Http.HttpResponseMessage') {
                 $rawBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
             }
             elseif ($response.PSObject.Methods.Name -contains 'GetResponseStream') {
@@ -93,6 +95,7 @@ function Get-ApiErrorDetails {
                 }
             }
         } catch {
+            Write-Debug "Error body extraction failed: $($_.Exception.Message)"
         }
     }
 
@@ -324,11 +327,21 @@ function Send-ApiRequest {
             }
 
             if ($null -ne $requestBody) {
-                if ($requestBody -is [string]) {
+                if ($requestBody -is [byte[]]) {
                     $irmParams['Body'] = $requestBody
                 }
                 else {
-                    $irmParams['Body'] = ($requestBody | ConvertTo-Json -Depth $JsonDepthRequest -Compress)
+                    if ($requestBody -is [string]) {
+                        $bodyString = $requestBody
+                    }
+                    else {
+                        $bodyString = ($requestBody | ConvertTo-Json -Depth $JsonDepthRequest -Compress)
+                    }
+
+                    # Send pre-encoded UTF-8 bytes. Windows PowerShell 5.1 otherwise encodes a
+                    # string body using the system ANSI code page, corrupting non-ASCII content
+                    # (a charset in the Headers hashtable is ignored by that runtime).
+                    $irmParams['Body'] = [System.Text.Encoding]::UTF8.GetBytes($bodyString)
                 }
             }
 
@@ -377,7 +390,7 @@ function Send-ApiRequest {
                     (Get-ApiErrorCategory -StatusCode $statusCode),
                     $currentUri
                 )
-                Write-Error $errorRecord
+                Write-Error -ErrorRecord $errorRecord
                 return
             }
         } while ($retryCount -le $MaxRetries)
